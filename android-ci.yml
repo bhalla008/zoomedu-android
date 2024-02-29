@@ -1,0 +1,153 @@
+# This is a basic workflow to help you get started with Actions
+
+name: ClassForZoom Android Pipeline
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the main branch
+
+on:
+  push:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  test:
+    # The type of runner that the job will run on
+    name: pipeline for classforzoom
+    if : "contains('refs/heads/develop refs/heads/release', github.ref)"
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    #steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      #- uses: actions/checkout@v2
+
+      # Runs a single command using the runners shell
+      #- name: Run a one-line script
+      #  run: echo Hello, world!
+
+      # Runs a set of commands using the runners shell
+      #- name: Run a multi-line script
+      #  run: |
+      #    echo Add other actions to build,
+      #    echo test, and deploy your project.
+
+
+    steps:
+      #- uses: actions/checkout@v1
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          lfs: true
+      - name: Create GitHub deployment
+        uses: bobheadxi/deployments@v0.4.3
+        id: deployment
+        with:
+          step: start
+          token: ${{ secrets.GITHUB_TOKEN }}
+          env: test
+      - name: set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+      - name: Install NDK
+        run: echo "y" | sudo ${ANDROID_HOME}/tools/bin/sdkmanager --install "ndk;21.0.6113669"
+
+
+      - name: Fastlane Action for develop
+        if: ${{ github.ref == 'refs/heads/develop' }}
+        uses: maierj/fastlane-action@v1.4.0
+        with:
+          lane: 'beta_build_distribute'
+        env:
+            #MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FIREBASE_CLI_TOKEN: ${{ secrets.FIREBASE_CLI_TOKEN }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID_DEV }}
+
+      - name: Fastlane Action for release
+        if: ${{ github.ref == 'refs/heads/develop' }}
+        uses: maierj/fastlane-action@v1.4.0
+        with:
+          lane: 'qa_build_distribute'
+        env:
+            #MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FIREBASE_CLI_TOKEN: ${{ secrets.FIREBASE_CLI_TOKEN }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID_QA }}
+
+      - name: Configure Keystore
+        if: ${{ github.ref == 'refs/heads/release' }}
+        run: |
+            echo "$ANDROID_KEYSTORE_FILE" > keystore.jks.b64
+            base64 -d -i keystore.jks.b64 > app/keystore.jks
+            echo "storeFile=keystore.jks" >> keystore.properties
+            echo "keyAlias=$KEYSTORE_KEY_ALIAS" >> keystore.properties
+            echo "storePassword=$KEYSTORE_STORE_PASSWORD" >> keystore.properties
+            echo "keyPassword=$KEYSTORE_KEY_PASSWORD" >> keystore.properties
+        env:
+            ANDROID_KEYSTORE_FILE: ${{ secrets.ANDROID_KEYSTORE_FILE }}
+            KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+            KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+            KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+
+      - name: Fastlane Action
+        if: ${{ github.ref == 'refs/heads/release' }}
+        uses: maierj/fastlane-action@v1.4.0
+        with:
+         lane: 'app_store_distribute'
+        env:
+          #MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FIREBASE_CLI_TOKEN: ${{ secrets.FIREBASE_CLI_TOKEN }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID_DEV }}
+      #- name: Fastlane Action
+      #  uses: maierj/fastlane-action@v1.4.0
+      #  with:
+      #   lane: 'qa_build_distribute'
+      #  env:
+          #MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+      #    FIREBASE_CLI_TOKEN: ${{ secrets.FIREBASE_CLI_TOKEN }}
+      #    FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID_QA }}
+
+      #- name: Build debug APK
+      #  run: bash ./gradlew assembleQaDebug --stacktrace
+     # - name: Upload APK
+     #  uses: actions/upload-artifact@v1
+     #   with:
+     #     name: mynewapp
+     #     path: app/build/outputs/apk/qa/debug/app-qa-debug.apk
+     # - name: Extract environment from branch
+     #   id: environment
+     #   run: |
+     #     echo "::set-output name=environment::$(if [[ $GITHUB_REF == '/refs/heads/master' ]]; then echo prod; else if [[ $GITHUB_REF == '/    refs/heads/release'* ]]; then echo test; else echo dev; fi; fi)"
+     # - name: Create GitHub deployment
+     #   uses: bobheadxi/deployments@master
+     #   id: deployment
+     #   with:
+     #     step: start
+     #     token: ${{ secrets.GITHUB_TOKEN }}
+     #     env: ${{ steps.environment.outputs.environment }}
+      - name: Update deployment status
+        uses: bobheadxi/deployments@v0.4.3
+        if: always()
+        with:
+          step: finish
+          token: ${{ secrets.GITHUB_TOKEN }}
+          status: ${{ job.status }}
+          deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+          desc: ${{ steps.changelog.outputs.changelog }}
+
+      #- name: Start SSH via Ngrok
+      #  if: ${{ failure() }}
+      #  run: curl -sL https://gist.githubusercontent.com/retyui/7115bb6acf151351a143ec8f96a7c561/raw/7099b9db76729dc5761da72aa8525f632d8875c9/debug-github-actions.sh | bash
+      #  env:
+        # After sign up on the https://ngrok.com/
+        # You can find this token here: https://dashboard.ngrok.com/get-started/setup
+        # NGROK_TOKEN: ${{ secrets.NGROK_TOKEN }}
+      #   NGROK_TOKEN: 1iirvNELRcDTGZEEFymjfxM0Dgl_88YyP3PWH9oSuT4gKDM3W
+
+        # This password you will use when authorizing via SSH
+        # USER_PASS: ${{ secrets.USER_PASS }}
+      #   USER_PASS: jatin
+
+      #- name: Don't kill instace
+      #  if: ${{ failure() }}
+      #  run: sleep 1h # Prevent to killing instance after failure
